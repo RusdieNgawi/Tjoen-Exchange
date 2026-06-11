@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bursa Koin Tjoen - Realtime</title>
+    <style>
+        body { background: #121214; color: #ffffff; font-family: sans-serif; padding: 20px; }
+        .box { border: 1px solid #29292e; padding: 20px; border-radius: 8px; background: #1a1a1e; max-width: 400px; }
+        .price { font-size: 2rem; font-weight: bold; color: #00e676; margin: 10px 0; }
+        .btn { display: inline-block; padding: 10px 15px; background: #0070f3; color: white; text-decoration: none; border-radius: 5px; }
+    </style>
+</head>
+<body>
+
+    <h1>Bursa Tjoen</h1>
+    <div class="box">
+        <h3>Harga Koin Tjoen Saat Ini:</h3>
+        <div id="tjoen-price" class="price">Memuat...</div>
+        <p id="market-status" style="color: #a0a0a5;">Menghubungkan ke server...</p>
+    </div>
+    <br>
+    <a href="/admin" class="btn">Masuk Panel Admin</a>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getFirestore, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+
+        // Konfigurasi Anda (Salin dari Firebase Console)
+        const firebaseConfig = {
+            apiKey: "AIzaSy...", 
+            authDomain: "tjoen-exchange.firebaseapp.com",
+            projectId: "tjoen-exchange",
+            storageBucket: "tjoen-exchange.appspot.com",
+            messagingSenderId: "123456789",
+            appId: "1:1234:web:abcd"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+
+        // Masuk secara anonim dan dengarkan perubahan harga
+        async function startBursa() {
+            try {
+                await signInAnonymously(auth);
+                
+                // Ambil data real-time dari dokumen Firestore yang sama dengan engine
+                const docRef = doc(db, 'artifacts', 'tjoen-exchange-app', 'public', 'data', 'state');
+                
+                onSnapshot(docRef, (snapshot) => {
+                    if (snapshot.exists()) {
+                        const data = snapshot.data();
+                        const harga = Math.round(data.currentPrice);
+                        
+                        document.getElementById('tjoen-price').innerText = `Rp ${harga.toLocaleString('id-ID')}`;
+                        document.getElementById('market-status').innerText = `Sinkron! Terakhir diperbarui harian.`;
+                    }
+                });
+            } catch (error) {
+                console.error("Error sambungan:", error);
+                document.getElementById('market-status').innerText = "Gagal terhubung ke database cloud.";
+            }
+        }
+
+        startBursa();
+    </script>
+</body>
+</html>

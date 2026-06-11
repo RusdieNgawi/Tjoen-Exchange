@@ -1,0 +1,124 @@
+```html
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TJOEN - Control & Admin Panel</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body class="bg-[#080a0c] text-[#eaecef] min-h-screen flex items-center justify-center p-4">
+
+    <div class="max-w-md w-full bg-[#11141a] border border-[#222630] rounded-xl p-6 space-y-6">
+        <div class="flex items-center gap-2.5 border-b border-[#222630] pb-4">
+            <div class="p-2 bg-amber-500 text-black rounded-lg">
+                <i data-lucide="sliders" class="w-5 h-5"></i>
+            </div>
+            <div>
+                <h1 class="font-extrabold text-white text-lg">Tjoen Admin Engine</h1>
+                <p class="text-xs text-gray-400">Pengendali Kurs USD/IDR & Arah Koin</p>
+            </div>
+        </div>
+
+        <!-- Masukan Kurs USD/IDR -->
+        <div class="space-y-2">
+            <label class="text-xs text-gray-400 font-bold block">Ubah Nilai Kurs USD/IDR saat ini</label>
+            <div class="relative">
+                <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm font-bold">Rp</span>
+                <input id="usd-rate-input" type="number" placeholder="Contoh: 16200" class="w-full bg-[#161a22] border border-[#222630] py-3.5 pl-10 pr-4 rounded-lg font-bold text-white focus:outline-none focus:border-amber-500 text-sm" />
+            </div>
+            <p class="text-[10px] text-gray-500">
+                *Mengisi nilai di atas 15.900 akan membuat volatilitas pergerakan koin Tjoen cenderung rebound/hijau. Sebaliknya, di bawah 15.900 akan mempercepat koreksi.
+            </p>
+        </div>
+
+        <button id="apply-btn" class="w-full bg-amber-500 hover:bg-amber-400 text-black font-extrabold py-3 rounded-lg text-xs tracking-wider transition">
+            SINKRONISASIKAN KURS KE DATABASE
+        </button>
+
+        <div id="status-box" class="hidden p-3 rounded text-xs"></div>
+    </div>
+
+    <!-- Firebase (v11.6.1) -->
+    <script type="importmap">
+      {
+        "imports": {
+          "firebase/app": "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js",
+          "firebase/auth": "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js",
+          "firebase/firestore": "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js"
+        }
+      }
+    </script>
+
+    <script type="module">
+        import { initializeApp } from "firebase/app";
+        import { getAuth, signInAnonymously } from "firebase/auth";
+        import { getFirestore, doc, setDoc, getDoc } from "firebase/firestore";
+
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'tjoen-exchange-app';
+        const defaultFirebaseConfig = {
+            apiKey: "",
+            authDomain: "tjoen-exchange.firebaseapp.com",
+            projectId: "tjoen-exchange",
+            storageBucket: "tjoen-exchange.appspot.com",
+            messagingSenderId: "1234567890",
+            appId: "1:1234567890:web:abcdef"
+        };
+        const rawConfig = typeof __firebase_config !== 'undefined' ? __firebase_config : JSON.stringify(defaultFirebaseConfig);
+        const firebaseConfig = JSON.parse(rawConfig);
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        const rateInput = document.getElementById('usd-rate-input');
+        const applyBtn = document.getElementById('apply-btn');
+        const statusBox = document.getElementById('status-box');
+
+        // Sign in & load current state
+        window.addEventListener('load', async () => {
+            lucide.createIcons();
+            await signInAnonymously(auth);
+
+            // Diperbaiki menggunakan jalur dokumen 6 segmen yang valid
+            const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'state', 'current');
+            const snap = await getDoc(docRef);
+            if (snap.exists()) {
+                rateInput.value = snap.data().usdRate || 15900;
+            }
+        });
+
+        applyBtn.addEventListener('click', async () => {
+            const val = parseFloat(rateInput.value);
+            if (isNaN(val) || val <= 0) {
+                showStatus("Gagal: Masukkan nominal yang valid", "bg-red-500/10 text-red-400 border border-red-500/20");
+                return;
+            }
+
+            try {
+                applyBtn.disabled = true;
+                applyBtn.textContent = "MEMPROSES SINKRONISASI...";
+                
+                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'state', 'current');
+                await setDoc(docRef, { usdRate: val }, { merge: true });
+
+                showStatus("Sukses: Kurs USD/IDR berhasil dirubah. Seluruh user tersinkronisasi!", "bg-green-500/10 text-green-400 border border-green-500/20");
+            } catch (err) {
+                showStatus("Error: Gagal terhubung ke database cloud", "bg-red-500/10 text-red-400 border border-red-500/20");
+            } finally {
+                applyBtn.disabled = false;
+                applyBtn.textContent = "SINKRONISASIKAN KURS KE DATABASE";
+            }
+        });
+
+        function showStatus(msg, classes) {
+            statusBox.className = "p-3 rounded text-xs " + classes;
+            statusBox.textContent = msg;
+            statusBox.classList.remove('hidden');
+        }
+    </script>
+</body>
+</html>
+
+```

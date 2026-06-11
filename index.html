@@ -1,0 +1,416 @@
+```html
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TJOEN Hub - Platform Bursa Terpadu</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background-color: #080a0c;
+            color: #eaecef;
+        }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between">
+
+    <header class="bg-[#11141a] border-b border-[#222630] px-4 py-3 sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-3">
+            <div class="flex items-center gap-3">
+                <div class="bg-gradient-to-r from-amber-500 to-yellow-600 p-2 rounded-lg text-black">
+                    <i data-lucide="line-chart" class="w-5 h-5"></i>
+                </div>
+                <div>
+                    <h1 class="text-lg font-black text-white">TJOEN Exchange</h1>
+                    <p class="text-xs text-gray-400">Harga Awal: Rp 17.000 • Batasan: 25.000.000 Koin</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-3 text-xs">
+                <div class="bg-[#161a22] px-3 py-1.5 rounded-md border border-[#222630] flex items-center gap-2">
+                    <span id="market-dot" class="w-2 h-2 rounded-full bg-red-500"></span>
+                    <span id="market-status-text" class="font-bold text-gray-300">MEMUAT...</span>
+                </div>
+                <div id="wita-clock" class="bg-amber-500/10 text-amber-400 border border-amber-500/25 px-3 py-1.5 rounded-md font-bold">
+                    00:00:00 WITA
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="bg-[#0e1117] border-b border-[#222630] sticky top-[60px] z-40">
+        <div class="max-w-7xl mx-auto px-4 flex gap-4 text-xs md:text-sm font-bold">
+            <button onclick="switchTab('home')" id="tab-btn-home" class="py-3.5 px-2 border-b-2 border-amber-500 text-amber-500">Home</button>
+            <button onclick="switchTab('bursa')" id="tab-btn-bursa" class="py-3.5 px-2 border-b-2 border-transparent text-gray-400">Bursa Tjoen</button>
+            <button onclick="switchTab('portofolio')" id="tab-btn-portofolio" class="py-3.5 px-2 border-b-2 border-transparent text-gray-400">Portofolio</button>
+        </div>
+    </div>
+
+    <main class="max-w-7xl mx-auto p-4 w-full flex-grow">
+        
+        <div id="tab-home" class="tab-content active space-y-6 py-4">
+            <div class="bg-[#11141a] border border-[#222630] p-6 rounded-xl">
+                <span class="bg-amber-500/20 text-amber-400 text-xs px-2.5 py-1 rounded font-bold uppercase">Token Simulasi</span>
+                <h2 class="text-3xl font-extrabold mt-3 text-white">Platform Bursa Koin Tjoen</h2>
+                <p class="text-gray-300 text-sm mt-3 leading-relaxed">
+                    Selamat datang di portal perdagangan High-Risk simulasi. Nilai koin Tjoen terhubung langsung ke database cloud sehingga data di layar Anda tersinkronisasi secara real-time dengan teman Anda.
+                </p>
+                <div class="mt-6">
+                    <button onclick="switchTab('bursa')" class="bg-amber-500 text-black px-5 py-2.5 rounded-lg font-bold text-xs">Mulai Perdagangan</button>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+                <div class="bg-[#11141a] p-4 rounded-xl border border-[#222630]">
+                    <span class="text-gray-400 block">Harga Terakhir</span>
+                    <span id="stat-price" class="text-xl font-bold mt-1 text-white block">Rp 0</span>
+                </div>
+                <div class="bg-[#11141a] p-4 rounded-xl border border-[#222630]">
+                    <span class="text-gray-400 block">Kurs Kontrol USD/IDR</span>
+                    <span id="stat-usd" class="text-xl font-bold mt-1 text-amber-500 block">Rp 0</span>
+                </div>
+                <div class="bg-[#11141a] p-4 rounded-xl border border-[#222630]">
+                    <span class="text-gray-400 block">Sirkulasi Global</span>
+                    <span id="stat-supply" class="text-xl font-bold mt-1 text-white block">0 / 25M</span>
+                </div>
+            </div>
+        </div>
+
+        <div id="tab-bursa" class="tab-content space-y-4 py-4">
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+                <div class="lg:col-span-8 space-y-4">
+                    <div class="bg-[#11141a] p-4 rounded-xl border border-[#222630] flex justify-between items-center text-xs">
+                        <div>
+                            <span class="text-gray-400 block">Harga TJOEN/IDR</span>
+                            <span id="bursa-price" class="text-lg font-black text-white mt-1 block">Rp 0</span>
+                        </div>
+                        <div>
+                            <span class="text-gray-400 block">24h High / Low</span>
+                            <span id="bursa-high-low" class="text-white font-bold mt-1 block">Rp 0 / Rp 0</span>
+                        </div>
+                    </div>
+
+                    <div class="bg-[#11141a] p-4 rounded-xl border border-[#222630] h-[320px] flex flex-col">
+                        <span class="text-xs font-bold text-white mb-2 flex items-center gap-1">
+                            <i data-lucide="line-chart" class="w-4 h-4 text-amber-500"></i> Grafik Pergerakan Real-Time
+                        </span>
+                        <div class="flex-grow relative h-full w-full">
+                            <canvas id="bursaChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="lg:col-span-4 bg-[#11141a] p-4 rounded-xl border border-[#222630] space-y-4 text-xs h-fit">
+                    <h3 class="font-bold text-white text-sm">Panel Transaksi</h3>
+                    <div class="flex bg-[#161a22] p-1 rounded">
+                        <button onclick="setTradeMode('buy')" id="btn-mode-buy" class="w-1/2 py-1.5 rounded font-bold text-center bg-green-500 text-black">BELI</button>
+                        <button onclick="setTradeMode('sell')" id="btn-mode-sell" class="w-1/2 py-1.5 rounded font-bold text-center text-gray-400">JUAL</button>
+                    </div>
+                    <div>
+                        <label class="text-gray-400 block mb-1">Jumlah Koin (TJOEN)</label>
+                        <input type="number" id="trade-amount" oninput="calculateTotal()" placeholder="0" class="w-full bg-[#161a22] border border-[#222630] p-2 rounded text-white font-bold focus:outline-none" />
+                    </div>
+                    <div class="bg-[#161a22] p-3 rounded">
+                        <span class="text-gray-400 block text-[11px]">Total Estimasi</span>
+                        <span id="trade-total" class="text-sm font-bold text-white block mt-1">Rp 0</span>
+                    </div>
+                    <button onclick="executeTrade()" class="w-full py-2.5 rounded font-bold text-black bg-green-500" id="btn-execute">
+                        EKSEKUSI ORDER
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div id="tab-portofolio" class="tab-content space-y-4 py-4">
+            <div class="bg-[#11141a] p-6 rounded-xl border border-[#222630] max-w-xl mx-auto">
+                <h3 class="font-bold text-white text-sm mb-4">Portofolio Saya (Tersimpan Lokal)</h3>
+                <div class="space-y-3 text-xs">
+                    <div class="flex justify-between p-3 bg-[#161a22] rounded border border-[#222630]">
+                        <span class="text-gray-400">Saldo Rupiah (IDR)</span>
+                        <span id="port-idr" class="font-bold text-white">Rp 100.000.000</span>
+                    </div>
+                    <div class="flex justify-between p-3 bg-[#161a22] rounded border border-[#222630]">
+                        <span class="text-gray-400">Saldo Koin Tjoen</span>
+                        <span id="port-tjoen" class="font-bold text-amber-500">0 TJOEN</span>
+                    </div>
+                </div>
+                <button onclick="resetPortfolio()" class="w-full text-center py-2 text-xs text-red-400 bg-red-500/5 border border-dashed border-red-500/25 rounded mt-4">
+                    Reset Saldo ke Rp 100 Juta
+                </button>
+            </div>
+        </div>
+
+    </main>
+
+    <div id="toast" class="hidden fixed bottom-6 right-6 bg-[#161a22] border border-[#2b313d] px-4 py-3 rounded-xl shadow-lg text-xs z-[100]">
+        <h4 id="toast-title" class="font-bold text-white">Notifikasi</h4>
+        <p id="toast-desc" class="text-gray-400 mt-1">Deskripsi pesan.</p>
+    </div>
+
+    <footer class="bg-[#11141a] border-t border-[#222630] py-3 text-center text-xs text-gray-500">
+        <p>© 2026 Tjoen Hub • Sistem Sinkronisasi Cloud</p>
+    </footer>
+
+    <script>
+        // --- CONFIG FIREBASE (GANTI DENGAN MILIK ANDA) ---
+        const firebaseConfig = {
+            apiKey: "AIzaSy...",
+            authDomain: "tjoen-exchange.firebaseapp.com",
+            projectId: "tjoen-exchange",
+            storageBucket: "tjoen-exchange.appspot.com",
+            messagingSenderId: "1234567890",
+            appId: "1:1234:web:abcd"
+        };
+
+        // Inisialisasi Firebase v8
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        const auth = firebase.auth();
+
+        // State Global Aplikasi
+        let currentPrice = 17000;
+        let usdRate = 15900;
+        let circulatingSupply = 1500000;
+        let high24h = 17000;
+        let low24h = 17000;
+        let marketOpen = false;
+        let tradeMode = 'buy';
+
+        // Load Portofolio dari LocalStorage
+        let portfolio = {
+            idr: parseFloat(localStorage.getItem('tjoen_idr')) || 100000000,
+            tjoen: parseFloat(localStorage.getItem('tjoen_qty')) || 0
+        };
+
+        let chartInstance = null;
+
+        // Tampilkan Notifikasi Toast
+        function showToast(title, desc) {
+            document.getElementById('toast-title').innerText = title;
+            document.getElementById('toast-desc').innerText = desc;
+            const toast = document.getElementById('toast');
+            toast.classList.remove('hidden');
+            setTimeout(() => toast.classList.add('hidden'), 4000);
+        }
+
+        // Perpindahan Tab Menu
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.getElementById('tab-' + tabId).classList.add('active');
+            
+            document.querySelectorAll('[id^="tab-btn-"]').forEach(el => {
+                el.classList.remove('border-amber-500', 'text-amber-500');
+                el.classList.add('border-transparent', 'text-gray-400');
+            });
+            document.getElementById('tab-btn-' + tabId).classList.add('border-amber-500', 'text-amber-500');
+            
+            if (tabId === 'bursa') {
+                setTimeout(initOrUpdateChart, 100);
+            }
+        }
+
+        // Kontrol Tombol Beli / Jual
+        function setTradeMode(mode) {
+            tradeMode = mode;
+            const btnBuy = document.getElementById('btn-mode-buy');
+            const btnSell = document.getElementById('btn-mode-sell');
+            const btnExec = document.getElementById('btn-execute');
+
+            if(mode === 'buy') {
+                btnBuy.className = "w-1/2 py-1.5 rounded font-bold text-center bg-green-500 text-black";
+                btnSell.className = "w-1/2 py-1.5 rounded font-bold text-center text-gray-400";
+                btnExec.className = "w-1/2 py-2.5 rounded font-bold text-black bg-green-500";
+            } else {
+                btnBuy.className = "w-1/2 py-1.5 rounded font-bold text-center text-gray-400";
+                btnSell.className = "w-1/2 py-1.5 rounded font-bold text-center bg-red-500 text-black";
+                btnExec.className = "w-1/2 py-2.5 rounded font-bold text-black bg-red-500";
+            }
+            calculateTotal();
+        }
+
+        function calculateTotal() {
+            const qty = parseFloat(document.getElementById('trade-amount').value) || 0;
+            document.getElementById('trade-total').innerText = `Rp ${Math.round(qty * currentPrice).toLocaleString('id-ID')}`;
+        }
+
+        function updatePortfolioDOM() {
+            document.getElementById('port-idr').innerText = `Rp ${Math.round(portfolio.idr).toLocaleString('id-ID')}`;
+            document.getElementById('port-tjoen').innerText = `${portfolio.tjoen.toLocaleString('id-ID')} TJOEN`;
+        }
+
+        function resetPortfolio() {
+            if(confirm("Reset saldo?")) {
+                portfolio = { idr: 100000000, tjoen: 0 };
+                localStorage.setItem('tjoen_idr', 100000000);
+                localStorage.setItem('tjoen_qty', 0);
+                updatePortfolioDOM();
+                showToast("Reset Berhasil", "Saldo dikembalikan ke awal.");
+            }
+        }
+
+        // Eksekusi Pembelian/Penjualan Koin
+        function executeTrade() {
+            if(!marketOpen) {
+                showToast("Pasar Tutup", "Transaksi hanya buka jam 04:30 - 21:00 WITA.");
+                return;
+            }
+            const qty = parseFloat(document.getElementById('trade-amount').value);
+            if(isNaN(qty) || qty <= 0) {
+                showToast("Input Salah", "Silakan masukkan angka kuantitas.");
+                return;
+            }
+
+            const cost = qty * currentPrice;
+
+            if(tradeMode === 'buy') {
+                if(cost > portfolio.idr) {
+                    showToast("Gagal", "Saldo IDR Anda tidak mencukupi.");
+                    return;
+                }
+                if(circulatingSupply + qty > 25000000) {
+                    showToast("Batas Maksimal", "Sirkulasi koin sudah menyentuh batas 25 Juta.");
+                    return;
+                }
+                portfolio.idr -= cost;
+                portfolio.tjoen += qty;
+                
+                // Update sirkulasi ke Cloud Firestore
+                db.collection('artifacts').doc('tjoen-exchange-app').collection('public').doc('data').collection('state').doc('main').set({
+                    circulatingSupply: circulatingSupply + qty
+                }, { merge: true });
+
+            } else {
+                if(qty > portfolio.tjoen) {
+                    showToast("Gagal", "Koin Tjoen Anda tidak mencukupi.");
+                    return;
+                }
+                portfolio.idr += cost;
+                portfolio.tjoen -= qty;
+
+                db.collection('artifacts').doc('tjoen-exchange-app').collection('public').doc('data').collection('state').doc('main').set({
+                    circulatingSupply: Math.max(0, circulatingSupply - qty)
+                }, { merge: true });
+            }
+
+            localStorage.setItem('tjoen_idr', portfolio.idr);
+            localStorage.setItem('tjoen_qty', portfolio.tjoen);
+            updatePortfolioDOM();
+            document.getElementById('trade-amount').value = "";
+            calculateTotal();
+            showToast("Sukses", "Transaksi berhasil dieksekusi!");
+        }
+
+        // Mengatur Logika Grafik Dinamis (Chart.js)
+        let priceHistoryData = [];
+        function initOrUpdateChart() {
+            const ctx = document.getElementById('bursaChart');
+            if(!ctx || priceHistoryData.length === 0) return;
+
+            const labels = priceHistoryData.map(p => p.time);
+            const values = priceHistoryData.map(p => p.price);
+
+            if(chartInstance) {
+                chartInstance.data.labels = labels;
+                chartInstance.data.datasets[0].data = values;
+                chartInstance.update();
+            } else {
+                chartInstance = new Chart(ctx.getContext('2d'), {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            data: values,
+                            borderColor: '#10b981',
+                            borderWidth: 2,
+                            fill: false,
+                            tension: 0.2,
+                            pointRadius: 0
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: false } }
+                    }
+                });
+            }
+        }
+
+        // Jalankan Jam Operasional & Cek WITA (04:30 - 21:00)
+        setInterval(() => {
+            const now = new Date();
+            const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+            const wita = new Date(utc + (3600000 * 8));
+
+            const h = wita.getHours();
+            const m = wita.getMinutes();
+            const currentMin = h * 60 + m;
+
+            marketOpen = currentMin >= (4 * 60 + 30) && currentMin < (21 * 60);
+            
+            const dot = document.getElementById('market-dot');
+            const txt = document.getElementById('market-status-text');
+            if(marketOpen) {
+                dot.className = "w-2 h-2 rounded-full bg-green-500 animate-pulse";
+                txt.innerText = "BURSA BUKA";
+            } else {
+                dot.className = "w-2 h-2 rounded-full bg-red-500";
+                txt.innerText = "BURSA TUTUP";
+            }
+
+            document.getElementById('wita-clock').innerText = wita.toLocaleTimeString('id-ID') + ' WITA';
+        }, 1000);
+
+        // KONEKSI REAL-TIME DATA CLOUD FIRESTORE
+        window.addEventListener('load', async () => {
+            lucide.createIcons();
+            updatePortfolioDOM();
+
+            try {
+                // Login Tanpa Username/Password
+                await auth.signInAnonymously();
+
+                // Dengarkan Perubahan Harga Terpusat dari Engine secara Real-Time
+                db.collection('artifacts').doc('tjoen-exchange-app').collection('public').doc('data').collection('state').doc('main')
+                .onSnapshot((doc) => {
+                    if (doc.exists) {
+                        const data = doc.data();
+                        currentPrice = data.currentPrice || 17000;
+                        usdRate = data.usdRate || 15900;
+                        circulatingSupply = data.circulatingSupply || 1500000;
+                        high24h = data.high24h || currentPrice;
+                        low24h = data.low24h || currentPrice;
+                        priceHistoryData = data.priceHistory || [];
+
+                        // Update Angka di Layar
+                        document.getElementById('stat-price').innerText = `Rp ${Math.round(currentPrice).toLocaleString('id-ID')}`;
+                        document.getElementById('stat-usd').innerText = `Rp ${Math.round(usdRate).toLocaleString('id-ID')}`;
+                        document.getElementById('stat-supply').innerText = `${Math.round(circulatingSupply).toLocaleString('id-ID')} / 25M`;
+                        document.getElementById('bursa-price').innerText = `Rp ${Math.round(currentPrice).toLocaleString('id-ID')}`;
+                        document.getElementById('bursa-high-low').innerText = `Rp ${Math.round(high24h).toLocaleString('id-ID')} / Rp ${Math.round(low24h).toLocaleString('id-ID')}`;
+
+                        calculateTotal();
+                        initOrUpdateChart();
+                    }
+                });
+            } catch (e) {
+                console.error(e);
+                showToast("Error Koneksi", "Gagal mengautentikasi ke database cloud.");
+            }
+        });
+    </script>
+</body>
+</html>
+
+```

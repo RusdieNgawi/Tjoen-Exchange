@@ -1,0 +1,526 @@
+```html
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TJOEN Hub - Platform Bursa Terpadu</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- React & ReactDOM -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <!-- Babel for JSX compilation -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght=300;400;500;600;700;800&display=swap');
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background-color: #080a0c;
+            color: #eaecef;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+    <div id="root" class="flex flex-col min-h-screen"></div>
+
+    <!-- Firebase SDK (v11.6.1) -->
+    <script type="importmap">
+      {
+        "imports": {
+          "firebase/app": "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js",
+          "firebase/auth": "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js",
+          "firebase/firestore": "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js"
+        }
+      }
+    </script>
+
+    <!-- UI React Logic -->
+    <script type="babel" data-type="module">
+        import { initializeApp } from "firebase/app";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "firebase/auth";
+        import { getFirestore, doc, setDoc, onSnapshot } from "firebase/firestore";
+
+        // Konfigurasi Firebase dari environment global, atau fallback ke default sandbox
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'tjoen-exchange-app';
+        const defaultFirebaseConfig = {
+            apiKey: "",
+            authDomain: "tjoen-exchange.firebaseapp.com",
+            projectId: "tjoen-exchange",
+            storageBucket: "tjoen-exchange.appspot.com",
+            messagingSenderId: "1234567890",
+            appId: "1:1234567890:web:abcdef"
+        };
+        const rawConfig = typeof __firebase_config !== 'undefined' ? __firebase_config : JSON.stringify(defaultFirebaseConfig);
+        const firebaseConfig = JSON.parse(rawConfig);
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        const { useState, useEffect, useRef } = React;
+
+        // Berita & Tweet Komunitas buatan yang interaktif
+        const DUMMY_STREAMS = [
+            { id: 1, user: "Trader_Sangkuters", text: "GILAA!! Tjoen tiba-tiba rebound lagi ke Rp 17.000-an! Padahal gua baru aja cutloss tadi siang!! Emang nasib retail selalu dibuat pusing bandar!! 😡😭😭", sentiment: "marah", likes: 54, time: "2 menit yang lalu" },
+            { id: 2, user: "AnalisBicara", text: "Menarik melihat Tjoen dibatasi cuma 25 Juta koin. Secara teori kelangkaan, kalau yang beli konsisten naik dikit aja, harganya bisa melesat liar. Tapi ya, DYOR ya guys jangan asal fomo 😏", sentiment: "sarkas", likes: 21, time: "10 menit yang lalu" },
+            { id: 3, user: "BullRun_Army", text: "Gas terusss!! Selagi market buka jam 04.30 - 21.00 WITA, mari kita cicil serok koin Tjoen. Target akhir tahun Rp 150.000 per koin! Ke bulan bersama dev!! 🚀🚀🔥", sentiment: "optimis", likes: 142, time: "25 menit yang lalu" },
+            { id: 4, user: "CryptoSkeptis", text: "Selamat untuk para pembeli di harga pucuk Rp 17.000+. Nikmati sensasi deg-degan pas ditarik koreksi ke bawah ya, jangan lupa siapin obat penenang! Hahaha 🤡", sentiment: "sarkas", likes: 19, time: "1 jam yang lalu" }
+        ];
+
+        function App() {
+            const [user, setUser] = useState(null);
+            const [activeTab, setActiveTab] = useState('home'); // 'home', 'bursa', 'portofolio', 'stream'
+            
+            // State harga sinkron dari database cloud
+            const [coinState, setCoinState] = useState({
+                currentPrice: 17000.0,
+                openingPrice: 17000.0,
+                closingPrice: 17000.0,
+                high24h: 17000.0,
+                low24h: 17000.0,
+                usdRate: 15900.0,
+                circulatingSupply: 1500000.0,
+                priceHistory: []
+            });
+
+            // Portofolio Lokal User (Tersimpan di LocalStorage masing-masing user)
+            const [localPortfolio, setLocalPortfolio] = useState({
+                idrBalance: 100000000.0,
+                tjoenBalance: 0.0
+            });
+
+            const [tradeAmount, setTradeAmount] = useState("");
+            const [tradeMode, setTradeMode] = useState("buy");
+            const [streamList, setStreamList] = useState(DUMMY_STREAMS);
+            const [newPost, setNewPost] = useState("");
+            const [newSentiment, setNewSentiment] = useState("optimis");
+
+            const [marketOpen, setMarketOpen] = useState(false);
+            const [witaTime, setWitaTime] = useState("");
+            const [toast, setToast] = useState({ show: false, title: "", desc: "", type: "info" });
+
+            const chartRef = useRef(null);
+            const chartInstance = useRef(null);
+
+            // --- AUTH & SYNC ---
+            useEffect(() => {
+                const doAuth = async () => {
+                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                        await signInWithCustomToken(auth, __initial_auth_token);
+                    } else {
+                        await signInAnonymously(auth);
+                    }
+                };
+                doAuth();
+
+                onAuthStateChanged(auth, setUser);
+
+                const savedIdr = localStorage.getItem('local_tjoen_idr');
+                const savedTjoen = localStorage.getItem('local_tjoen_qty');
+                if (savedIdr && savedTjoen) {
+                    setLocalPortfolio({ idrBalance: parseFloat(savedIdr), tjoenBalance: parseFloat(savedTjoen) });
+                }
+            }, []);
+
+            // --- FIRESTORE SUBSCRIPTION ---
+            useEffect(() => {
+                if (!user) return;
+                // Diperbaiki menggunakan jalur dokumen 6 segmen yang valid
+                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'state', 'current');
+                
+                const unsub = onSnapshot(docRef, (snap) => {
+                    if (snap.exists()) {
+                        setCoinState(snap.data());
+                    }
+                }, (err) => console.error("Error database: ", err));
+
+                return () => unsub();
+            }, [user]);
+
+            // --- OPERATIONAL TIME ---
+            useEffect(() => {
+                const clockInterval = setInterval(() => {
+                    const now = new Date();
+                    const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+                    const wita = new Date(utc + (3600000 * 8)); // UTC+8 WITA
+
+                    const hours = wita.getHours();
+                    const minutes = wita.getMinutes();
+                    const currentMinutes = hours * 60 + minutes;
+
+                    const isOpen = currentMinutes >= (4 * 60 + 30) && currentMinutes < (21 * 60); // 04:30 - 21:00
+                    setMarketOpen(isOpen);
+
+                    setWitaTime(wita.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' WITA');
+                }, 1000);
+
+                return () => clearInterval(clockInterval);
+            }, []);
+
+            // --- CHART CONTROLLER ---
+            useEffect(() => {
+                if (!chartRef.current || coinState.priceHistory.length === 0) return;
+
+                const ctx = chartRef.current.getContext('2d');
+                if (chartInstance.current) {
+                    chartInstance.current.destroy();
+                }
+
+                // Warnanya berubah otomatis: Hijau jika harga sekarang >= harga buka harian, jika tidak merah
+                const isBullish = coinState.currentPrice >= coinState.openingPrice;
+                const primaryColor = isBullish ? '#10b981' : '#ef4444';
+                
+                const gradient = ctx.createLinearGradient(0, 0, 0, 250);
+                gradient.addColorStop(0, isBullish ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)');
+                gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+                chartInstance.current = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: coinState.priceHistory.map(p => p.time),
+                        datasets: [{
+                            data: coinState.priceHistory.map(p => p.price),
+                            borderColor: primaryColor,
+                            borderWidth: 2,
+                            backgroundColor: gradient,
+                            fill: true,
+                            tension: 0.2,
+                            pointRadius: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            x: { grid: { color: '#16191f' }, ticks: { color: '#848e9c', font: { size: 9 } } },
+                            y: { grid: { color: '#16191f' }, ticks: { color: '#848e9c', font: { size: 9 } } }
+                        }
+                    }
+                });
+            }, [coinState, activeTab]);
+
+            const triggerToast = (title, desc, type = "success") => {
+                setToast({ show: true, title, desc, type });
+                setTimeout(() => setToast(prev => ({ ...prev, show: false })), 4000);
+            };
+
+            const handleTrade = async () => {
+                if (!marketOpen) {
+                    triggerToast("Pasar Tutup", "Transaksi hanya diperbolehkan jam 04:30 - 21:00 WITA.", "error");
+                    return;
+                }
+
+                const qty = parseFloat(tradeAmount);
+                if (isNaN(qty) || qty <= 0) {
+                    triggerToast("Input Salah", "Silakan ketik jumlah Tjoen yang dibeli/dijual.", "error");
+                    return;
+                }
+
+                const totalCost = qty * coinState.currentPrice;
+
+                if (tradeMode === 'buy') {
+                    if (totalCost > localPortfolio.idrBalance) {
+                        triggerToast("Gagal", "Simulasi Saldo IDR Anda kurang.", "error");
+                        return;
+                    }
+                    if (coinState.circulatingSupply + qty > 25000000) {
+                        triggerToast("Batas Maksimal", "Jumlah sirkulasi dibatasi keras maksimal 25 Juta Tjoen.", "error");
+                        return;
+                    }
+
+                    const nextIdr = localPortfolio.idrBalance - totalCost;
+                    const nextTjoen = localPortfolio.tjoenBalance + qty;
+
+                    setLocalPortfolio({ idrBalance: nextIdr, tjoenBalance: nextTjoen });
+                    localStorage.setItem('local_tjoen_idr', nextIdr);
+                    localStorage.setItem('local_tjoen_qty', nextTjoen);
+
+                    // Update sirkulasi di Firestore dengan jalur dokumen yang diperbaiki
+                    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'state', 'current');
+                    await setDoc(docRef, { circulatingSupply: coinState.circulatingSupply + qty }, { merge: true });
+
+                    triggerToast("Beli Sukses", `Membeli ${qty} Tjoen seharga Rp ${Math.round(totalCost).toLocaleString('id-ID')}`, "success");
+                } else {
+                    if (qty > localPortfolio.tjoenBalance) {
+                        triggerToast("Gagal", "Jumlah Tjoen di portofolio Anda kurang.", "error");
+                        return;
+                    }
+
+                    const nextIdr = localPortfolio.idrBalance + totalCost;
+                    const nextTjoen = localPortfolio.tjoenBalance - qty;
+
+                    setLocalPortfolio({ idrBalance: nextIdr, tjoenBalance: nextTjoen });
+                    localStorage.setItem('local_tjoen_idr', nextIdr);
+                    localStorage.setItem('local_tjoen_qty', nextTjoen);
+
+                    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'state', 'current');
+                    await setDoc(docRef, { circulatingSupply: Math.max(0, coinState.circulatingSupply - qty) }, { merge: true });
+
+                    triggerToast("Jual Sukses", `Menjual ${qty} Tjoen senilai Rp ${Math.round(totalCost).toLocaleString('id-ID')}`, "success");
+                }
+                setTradeAmount("");
+            };
+
+            const postStream = (e) => {
+                e.preventDefault();
+                if (!newPost.trim()) return;
+
+                const postData = {
+                    id: Date.now(),
+                    user: "User_Kreatif",
+                    text: newPost,
+                    sentiment: newSentiment,
+                    likes: 0,
+                    time: "Baru saja"
+                };
+
+                setStreamList([postData, ...streamList]);
+                setNewPost("");
+                triggerToast("Terkirim", "Berita/komentar Anda disiarkan ke semua pengunjung!", "success");
+            };
+
+            return (
+                <div class="flex flex-col min-h-screen justify-between">
+                    
+                    {/* Header */}
+                    <header class="bg-[#11141a] border-b border-[#222630] px-4 py-3 sticky top-0 z-50">
+                        <div class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-3">
+                            <div class="flex items-center gap-3">
+                                <div class="bg-gradient-to-r from-amber-500 to-yellow-600 p-2 rounded-lg text-black">
+                                    <i data-lucide="line-chart" class="w-5 h-5"></i>
+                                </div>
+                                <div>
+                                    <h1 class="text-lg font-black text-white">TJOEN Exchange</h1>
+                                    <p class="text-xs text-gray-400">Harga Awal: Rp 17.000,0 • Batasan: 25.000.000 Koin</p>
+                                </div>
+                            </div>
+
+                            <div class="flex items-center gap-3 text-xs">
+                                <div class="bg-[#161a22] px-3 py-1.5 rounded-md border border-[#222630] flex items-center gap-2">
+                                    <span class={`w-2 h-2 rounded-full ${marketOpen ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></span>
+                                    <span class="font-bold text-gray-300">{marketOpen ? 'BURSA BUKA' : 'BURSA TUTUP'}</span>
+                                </div>
+                                <div class="bg-amber-500/10 text-amber-400 border border-amber-500/25 px-3 py-1.5 rounded-md font-bold">
+                                    {witaTime || "WITA"}
+                                </div>
+                            </div>
+                        </div>
+                    </header>
+
+                    {/* Navigation Tabs */}
+                    <div class="bg-[#0e1117] border-b border-[#222630] sticky top-[60px] z-40">
+                        <div class="max-w-7xl mx-auto px-4 flex gap-4 text-xs md:text-sm font-bold">
+                            <button onClick={() => setActiveTab('home')} class={`py-3.5 px-2 border-b-2 ${activeTab === 'home' ? 'border-amber-500 text-amber-500' : 'border-transparent text-gray-400'}`}>Home</button>
+                            <button onClick={() => setActiveTab('bursa')} class={`py-3.5 px-2 border-b-2 ${activeTab === 'bursa' ? 'border-amber-500 text-amber-500' : 'border-transparent text-gray-400'}`}>Bursa Tjoen</button>
+                            <button onClick={() => setActiveTab('portofolio')} class={`py-3.5 px-2 border-b-2 ${activeTab === 'portofolio' ? 'border-amber-500 text-amber-500' : 'border-transparent text-gray-400'}`}>Portofolio</button>
+                            <button onClick={() => setActiveTab('stream')} class={`py-3.5 px-2 border-b-2 ${activeTab === 'stream' ? 'border-amber-500 text-amber-500' : 'border-transparent text-gray-400'}`}>Stream Berita</button>
+                        </div>
+                    </div>
+
+                    {/* Content Router */}
+                    <main class="max-w-7xl mx-auto p-4 w-full flex-grow">
+                        
+                        {/* 1. HOME TAB */}
+                        {activeTab === 'home' && (
+                            <div class="space-y-6 py-4 animate-fade-in">
+                                <div class="bg-[#11141a] border border-[#222630] p-6 sm:p-10 rounded-xl">
+                                    <span class="bg-amber-500/20 text-amber-400 text-xs px-2.5 py-1 rounded font-bold uppercase">Token Fiktif</span>
+                                    <h2 class="text-3xl font-extrabold mt-3 text-white">Platform Bursa Koin Tjoen</h2>
+                                    <p class="text-gray-300 text-sm mt-3 leading-relaxed">
+                                        Selamat datang di portal perdagangan simulasi. Nilai koin Tjoen diawali di angka **Rp 17.000,0** dengan sistem pasokan koin terbatas (maksimum **25.000.000 Tjoen**). Halaman penulisan kurs dan simulasi harga terhubung langsung ke satu database terpusat sehingga data di layar Anda saat ini sinkron dengan semua pengguna lain yang membuka situs ini.
+                                    </p>
+                                    <div class="mt-6 flex gap-3">
+                                        <button onClick={() => setActiveTab('bursa')} class="bg-amber-500 text-black px-5 py-2.5 rounded-lg font-bold text-xs">Mulai Perdagangan</button>
+                                        <button onClick={() => setActiveTab('stream')} class="bg-[#1c212b] border border-[#222630] px-5 py-2.5 rounded-lg text-xs font-bold">Lihat Komunitas</button>
+                                    </div>
+                                </div>
+
+                                <div class="grid grid-cols-1 sm:grid-cols-4 gap-4 text-xs">
+                                    <div class="bg-[#11141a] p-4 rounded-xl border border-[#222630]">
+                                        <span class="text-gray-400 block">Harga Terakhir</span>
+                                        <span class="text-xl font-bold mt-1 text-white block">Rp {Math.round(coinState.currentPrice).toLocaleString('id-ID')}</span>
+                                    </div>
+                                    <div class="bg-[#11141a] p-4 rounded-xl border border-[#222630]">
+                                        <span class="text-gray-400 block">Kurs USD/IDR</span>
+                                        <span class="text-xl font-bold mt-1 text-amber-500 block">Rp {Math.round(coinState.usdRate).toLocaleString('id-ID')}</span>
+                                    </div>
+                                    <div class="bg-[#11141a] p-4 rounded-xl border border-[#222630]">
+                                        <span class="text-gray-400 block">Pembukaan Harian (04:30)</span>
+                                        <span class="text-xl font-bold mt-1 text-white block">Rp {Math.round(coinState.openingPrice).toLocaleString('id-ID')}</span>
+                                    </div>
+                                    <div class="bg-[#11141a] p-4 rounded-xl border border-[#222630]">
+                                        <span class="text-gray-400 block">Sirkulasi Koin saat ini</span>
+                                        <span class="text-xl font-bold mt-1 text-white block">{Math.round(coinState.circulatingSupply).toLocaleString('id-ID')} / 25M</span>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* 2. BURSA TAB */}
+                        {activeTab === 'bursa' && (
+                            <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 py-4 animate-fade-in">
+                                <div class="lg:col-span-8 space-y-4">
+                                    {/* Stats top bar */}
+                                    <div class="bg-[#11141a] p-4 rounded-xl border border-[#222630] flex justify-between items-center flex-wrap gap-4 text-xs">
+                                        <div>
+                                            <span class="text-gray-400 block">Harga TJOEN/IDR</span>
+                                            <span class="text-lg font-black text-white mt-1 block">Rp {Math.round(coinState.currentPrice).toLocaleString('id-ID')}</span>
+                                        </div>
+                                        <div>
+                                            <span class="text-gray-400 block">Perubahan Harian</span>
+                                            <span class={`font-bold block mt-1 ${coinState.currentPrice >= coinState.openingPrice ? 'text-green-500' : 'text-red-500'}`}>
+                                                {(((coinState.currentPrice - coinState.openingPrice) / coinState.openingPrice) * 100).toFixed(2)}%
+                                            </span>
+                                        </div>
+                                        <div>
+                                            <span class="text-gray-400 block">High / Low 24J</span>
+                                            <span class="text-white font-bold mt-1 block">Rp {Math.round(coinState.high24h).toLocaleString('id-ID')} / Rp {Math.round(coinState.low24h).toLocaleString('id-ID')}</span>
+                                        </div>
+                                    </div>
+
+                                    {/* Chart Frame */}
+                                    <div class="bg-[#11141a] p-4 rounded-xl border border-[#222630] h-[350px] flex flex-col">
+                                        <span class="text-xs font-bold text-white mb-2 flex items-center gap-1">
+                                            <i data-lucide="line-chart" class="w-4 h-4 text-amber-500"></i> Grafik Pasar Terpadu (Warna Dinamis)
+                                        </span>
+                                        <div class="flex-grow relative h-full w-full">
+                                            <canvas ref={chartRef}></canvas>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Trading frame */}
+                                <div class="lg:col-span-4 space-y-4">
+                                    <div class="bg-[#11141a] p-4 rounded-xl border border-[#222630] space-y-4 text-xs">
+                                        <h3 class="font-bold text-white text-sm">Panel Transaksi Cepat</h3>
+                                        
+                                        <div class="flex bg-[#161a22] p-1 rounded">
+                                            <button onClick={() => setTradeMode('buy')} class={`w-1/2 py-1.5 rounded font-bold text-center ${tradeMode === 'buy' ? 'bg-green-500 text-black' : 'text-gray-400'}`}>BELI</button>
+                                            <button onClick={() => setTradeMode('sell')} class={`w-1/2 py-1.5 rounded font-bold text-center ${tradeMode === 'sell' ? 'bg-red-500 text-black' : 'text-gray-400'}`}>JUAL</button>
+                                        </div>
+
+                                        <div>
+                                            <label class="text-gray-400 block mb-1">Jumlah Koin (TJOEN)</label>
+                                            <input type="number" value={tradeAmount} onChange={(e) => setTradeAmount(e.target.value)} placeholder="0" class="w-full bg-[#161a22] border border-[#222630] p-2 rounded text-white font-bold focus:outline-none" />
+                                        </div>
+
+                                        <div class="bg-[#161a22] p-3 rounded">
+                                            <div class="flex justify-between text-[11px] text-gray-400">
+                                                <span>Total Estimasi</span>
+                                            </div>
+                                            <span class="text-sm font-bold text-white block mt-1">Rp {Math.round((parseFloat(tradeAmount) || 0) * coinState.currentPrice).toLocaleString('id-ID')}</span>
+                                        </div>
+
+                                        <button onClick={handleTrade} class={`w-full py-2.5 rounded font-bold text-black ${tradeMode === 'buy' ? 'bg-green-500' : 'bg-red-500'}`}>
+                                            EKSEKUSI ORDER
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* 3. PORTFOLIO TAB */}
+                        {activeTab === 'portofolio' && (
+                            <div class="py-4 space-y-4 animate-fade-in">
+                                <div class="bg-[#11141a] p-6 rounded-xl border border-[#222630] max-w-xl">
+                                    <h3 class="font-bold text-white text-sm mb-4">Portofolio Simulasi Anda</h3>
+                                    
+                                    <div class="space-y-3 text-xs">
+                                        <div class="flex justify-between p-3 bg-[#161a22] rounded border border-[#222630]">
+                                            <span class="text-gray-400">Saldo Rupiah (IDR)</span>
+                                            <span class="font-bold text-white">Rp {Math.round(localPortfolio.idrBalance).toLocaleString('id-ID')}</span>
+                                        </div>
+                                        <div class="flex justify-between p-3 bg-[#161a22] rounded border border-[#222630]">
+                                            <span class="text-gray-400">Saldo Koin Tjoen</span>
+                                            <span class="font-bold text-amber-500">{localPortfolio.tjoenBalance.toLocaleString('id-ID')} TJOEN</span>
+                                        </div>
+                                        <div class="border-t border-[#222630] pt-3 flex justify-between font-bold">
+                                            <span>Estimasi Total Aset</span>
+                                            <span class="text-white">Rp {Math.round(localPortfolio.idrBalance + (localPortfolio.tjoenBalance * coinState.currentPrice)).toLocaleString('id-ID')}</span>
+                                        </div>
+                                    </div>
+
+                                    <button onClick={() => {
+                                        if(confirm("Mulai ulang saldo portofolio ke Rp 100 Juta?")) {
+                                            setLocalPortfolio({ idrBalance: 100000000, tjoenBalance: 0 });
+                                            localStorage.removeItem('local_tjoen_idr');
+                                            localStorage.removeItem('local_tjoen_qty');
+                                        }
+                                    }} class="w-full text-center py-2 text-xs text-red-400 bg-red-500/5 border border-dashed border-red-500/25 rounded mt-4">
+                                        Sapu / Reset Portofolio
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* 4. STREAM TAB */}
+                        {activeTab === 'stream' && (
+                            <div class="py-4 max-w-2xl mx-auto space-y-4 animate-fade-in">
+                                <div class="bg-[#11141a] p-4 rounded-xl border border-[#222630] text-xs">
+                                    <h3 class="font-bold text-white text-sm mb-3">Siarkan Analisa Anda</h3>
+                                    <form onSubmit={postStream} class="space-y-3">
+                                        <textarea value={newPost} onChange={(e) => setNewPost(e.target.value)} placeholder="Tulis kabar miring, analisa, amarah atau sarkasme tentang Tjoen..." class="w-full bg-[#161a22] border border-[#222630] p-3 rounded text-white" rows="2"></textarea>
+                                        <div class="flex justify-between items-center">
+                                            <select value={newSentiment} onChange={(e) => setNewSentiment(e.target.value)} class="bg-[#161a22] border border-[#222630] rounded p-1.5 text-white">
+                                                <option value="optimis">🚀 Optimis</option>
+                                                <option value="sarkas">😏 Sarkas</option>
+                                                <option value="marah">😡 Panik/Marah</option>
+                                            </select>
+                                            <button type="submit" class="bg-amber-500 text-black px-4 py-1.5 rounded font-bold">Kirim</button>
+                                        </div>
+                                    </form>
+                                </div>
+
+                                <div class="space-y-3">
+                                    {streamList.map(p => (
+                                        <div key={p.id} class="bg-[#11141a] p-4 rounded-xl border border-[#222630] text-xs space-y-2">
+                                            <div class="flex justify-between">
+                                                <span class="font-bold text-white">@{p.user}</span>
+                                                <span class={`px-2 py-0.5 rounded text-[9px] font-bold ${p.sentiment === 'marah' ? 'bg-red-500/10 text-red-400' : p.sentiment === 'sarkas' ? 'bg-purple-500/10 text-purple-400' : 'bg-green-500/10 text-green-400'}`}>
+                                                    {p.sentiment.toUpperCase()}
+                                                </span>
+                                            </div>
+                                            <p class="text-gray-300 leading-relaxed">{p.text}</p>
+                                            <div class="text-[10px] text-gray-500">{p.time}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                    </main>
+
+                    {/* Toast Alert */}
+                    {toast.show && (
+                        <div class="fixed bottom-6 right-6 bg-[#161a22] border border-[#2b313d] px-4 py-3 rounded-xl shadow-lg text-xs z-[100]">
+                            <h4 class="font-bold text-white">{toast.title}</h4>
+                            <p class="text-gray-400 mt-1">{toast.desc}</p>
+                        </div>
+                    )}
+
+                    <footer class="bg-[#11141a] border-t border-[#222630] py-3 text-center text-xs text-gray-500">
+                        <p>© 2026 Tjoen Hub • Halaman ini Terpisah Secara Berstruktur.</p>
+                    </footer>
+
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+    <script>
+        window.addEventListener('load', () => lucide.createIcons());
+    </script>
+</body>
+</html>
+
+```
